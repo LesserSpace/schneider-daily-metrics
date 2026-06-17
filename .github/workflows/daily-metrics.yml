@@ -1,0 +1,45 @@
+name: Daily site metrics to Supabase
+
+on:
+  schedule:
+    # 07:10 UTC every day (just after midnight LA time, so yesterday is closed).
+    - cron: "10 7 * * *"
+  workflow_dispatch: {}   # lets you run it manually with one click
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull GA4 and record in Supabase
+        env:
+          GA4_PROPERTY_ID:           ${{ secrets.GA4_PROPERTY_ID }}
+          GA_SERVICE_ACCOUNT_JSON:   ${{ secrets.GA_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python record_daily_metrics.py
+
+      - name: Heartbeat commit on Mondays
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            git config user.name  "metrics-bot"
+            git config user.email "metrics-bot@users.noreply.github.com"
+            date -u > .last_run
+            git add .last_run
+            git commit -m "heartbeat: keep scheduled workflow enabled" || exit 0
+            git push
+          fi
